@@ -3,6 +3,8 @@
 
 [English](README.md) · **简体中文** · [Русский](README.ru.md)
 
+**Phase 1：仅支持只读研究和本地纸面模拟，无需钱包凭证。安全边界及后续要求见 [SECURITY.md](SECURITY.md)。**
+
 一个用 TypeScript 编写的机器人，用于交易 Polymarket 上的**每日最高气温**市场
 （例如「6 月 19 日首尔的最高气温会是 29°C 吗？」），它使用**概率预测**而非单点估计。
 
@@ -31,13 +33,14 @@
 | 优势 | [src/strategy/edge.ts](src/strategy/edge.ts) | 把模型 P(区间) 与实时卖价比较（Yes 和 No 两侧都看），保留通过 优势/价格/流动性 门槛的候选。 |
 | 仓位 | [src/strategy/sizing.ts](src/strategy/sizing.ts) | 分数凯利仓位：`f* = (q − p)/(1 − p)`，再乘以 `KELLY_FRACTION`。 |
 | 风险 | [src/risk/guards.ts](src/risk/guards.ts) | 单市场、单事件、总敞口与单日亏损上限。 |
-| 执行 | [src/trading/executor.ts](src/trading/executor.ts) | 模拟成交（纸面），或在实盘模式下向 CLOB 下真实订单。 |
+| 执行 | [src/trading/executor.ts](src/trading/executor.ts) | 仅模拟成交；实盘执行被禁用。 |
 | 跟踪 | [src/trading/portfolio.ts](src/trading/portfolio.ts) + [src/store/db.ts](src/store/db.ts) | 持仓、敞口与已实现盈亏，持久化到 `data/state.json`。 |
 
 ## 安装
 
 ```bash
-npm install
+nvm use
+npm ci --ignore-scripts
 cp .env.example .env        # 然后编辑 .env
 ```
 
@@ -53,10 +56,10 @@ npm run forecast -- nyc 2026-06-20     # 指定日期
 npm run scan                           # 分析所有市场，显示优势 + 拟下单
                                        # —— 绝不真正下单
 
-npm run run-once                       # 执行一轮（纸面或实盘）
+npm run run-once                       # 执行一轮（仅纸面模拟）
 npm run watch -- 10                    # 每 10 分钟重复执行一次
 
-npm run auth                           # 派生 CLOB API 凭证以缓存到 .env
+npm run auth                           # 已禁用，不派生或打印凭证
 npm run portfolio                      # 持仓、敞口、已实现盈亏
 ```
 
@@ -64,13 +67,7 @@ npm run portfolio                      # 持仓、敞口、已实现盈亏
 
 ## 开启实盘
 
-1. 用 USDC 为一个**专用的** Polygon 钱包充值（不要用你的主钱包）。
-2. 在 `.env` 中设置 `PRIVATE_KEY`、`FUNDER_ADDRESS`（你的 Polymarket 个人资料地址）
-   和 `SIGNATURE_TYPE`（`0` EOA / `1` Magic 邮箱 / `2` Safe）。
-3. 运行一次 `npm run auth`，把打印出的凭证粘贴回 `.env`。
-4. 把 `BANKROLL` 设为不超过你的真实余额，并把 `KELLY_FRACTION` 保持在较低水平
-   （0.25 = 四分之一凯利）。
-5. 将 `TRADING_MODE=live`。若缺少密钥，机器人会拒绝启动实盘。
+本阶段禁用身份验证与所有实盘下单。不要配置私钥、API secret 或 passphrase。`TRADING_MODE=live` 无法开启交易；后续要求见 [SECURITY.md](SECURITY.md)。
 
 ## ⚠️ 信任它之前先做校准
 
@@ -105,9 +102,8 @@ npm run portfolio                      # 持仓、敞口、已实现盈亏
 
 ## 说明
 
-- `@polymarket/clob-client` 依赖虽已归档，但仍是当下交易实时 CLOB 最经过实战检验的
-  方式；它被隔离在 [src/polymarket/clob.ts](src/polymarket/clob.ts) 之后，因此日后迁移到
-  Polymarket 新的统一 SDK 只需改动这一个文件。
+- 订单簿读取已迁移到官方 `@polymarket/client`。原有策略与天气预报计算保持不变。
+  SDK 兼容性及剩余风险见 [SECURITY.md](SECURITY.md)。
 - 无需任何付费服务：Open-Meteo 与 NWS 均免费且无需密钥。
 
 [参考来源](https://x.com/polysuccubus/status/2046644181347491847)

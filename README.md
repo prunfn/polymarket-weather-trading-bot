@@ -23,6 +23,10 @@ live order book ──► market price per bucket ──────────
                           fractional-Kelly stake ──► risk caps ──► order
 ```
 
+> **Phase 1: read-only research and local paper simulation.** Authentication and
+> live orders are disabled, including when `TRADING_MODE=live`. No wallet or API
+> credentials are needed. See [SECURITY.md](SECURITY.md) for limits and next-PR gates.
+
 ## How it works
 
 | Stage | Module | What it does |
@@ -33,13 +37,14 @@ live order book ──► market price per bucket ──────────
 | Edge | [src/strategy/edge.ts](src/strategy/edge.ts) | **De-vigs** the bucket ladder (normalises YES prices to sum to 1) to recover the true market-implied distribution, **shrinks** the model toward it (`MODEL_WEIGHT`), then keeps candidates whose blended edge passes the edge/price/liquidity gates. |
 | Sizing | [src/strategy/sizing.ts](src/strategy/sizing.ts) | Fractional-Kelly stake on the *blended* probability: `f* = (q − p)/(1 − p)`, scaled by `KELLY_FRACTION`, with a **correlation discount** (`CORRELATION_DECAY`) on stacked same-direction bets across the ladder. |
 | Risk | [src/risk/guards.ts](src/risk/guards.ts) | Per-market, per-event, total-exposure and daily-loss caps. |
-| Execute | [src/trading/executor.ts](src/trading/executor.ts) | Paper-simulates fills, or places real CLOB orders in live mode. |
+| Execute | [src/trading/executor.ts](src/trading/executor.ts) | Paper-simulates fills locally; live execution is blocked. |
 | Track | [src/trading/portfolio.ts](src/trading/portfolio.ts) + [src/store/db.ts](src/store/db.ts) | Positions, exposure and realized PnL persisted to `data/state.json`. |
 
 ## Setup
 
 ```bash
-npm install
+nvm use                    # Node 24.14.0; official SDK requires Node >=24
+npm ci --ignore-scripts     # committed lockfile; lifecycle scripts disabled
 cp .env.example .env        # then edit .env
 ```
 
@@ -55,24 +60,34 @@ npm run forecast -- nyc 2026-06-20     # for a specific date
 npm run scan                           # analyze all markets, show edges + intended
                                        # trades — never places orders
 
-npm run run-once                       # one pass that executes (paper or live)
+npm run run-once                       # one pass that simulates paper fills
 npm run watch -- 10                    # repeat run every 10 minutes
 
-npm run auth                           # derive CLOB API creds to cache in .env
+npm run auth                           # disabled; exits without deriving credentials
 npm run portfolio                      # positions, exposure, realized PnL
 ```
 
 `scan` is always read-only and needs no credentials — start there.
 
-## Going live
+## Security and verification
 
-1. Fund a **dedicated** Polygon wallet with USDC (not your main wallet).
-2. Set `PRIVATE_KEY`, `FUNDER_ADDRESS` (your Polymarket profile address) and
-   `SIGNATURE_TYPE` (`0` EOA / `1` Magic-email / `2` Safe) in `.env`.
-3. Run `npm run auth` once and paste the printed creds back into `.env`.
-4. Set `BANKROLL` to no more than your real balance and keep `KELLY_FRACTION`
-   low (0.25 = quarter-Kelly).
-5. Flip `TRADING_MODE=live`. The bot refuses to start live without the keys.
+Do not configure a private key, API secret or passphrase. The old `auth` command
+now exits with an error; credentials are never derived or printed. `run-once` and
+`watch` reject live mode before doing work. `scan` remains read-only even when
+live mode is selected; paper runs write simulated fills to `data/state.json`.
+
+```bash
+npm audit --audit-level=low
+npm run typecheck
+npm test
+npm run build
+```
+
+CI runs these checks after `npm ci --ignore-scripts`. Tests use synthetic public
+responses and invalid credential markers, with no wallet or trading requests.
+Direct dependency versions and the lockfile are committed. Review dependency
+updates and lifecycle scripts before running code; `.npmrc` disables scripts by
+default. Never override that setting just to make an install succeed.
 
 ## ⚠️ Calibrate before trusting it
 
@@ -131,10 +146,12 @@ risk; you are responsible for your own funds and decisions.
 
 ## Notes
 
-- The `@polymarket/clob-client` dependency is archived but still the most
-  battle-tested way to trade the live CLOB; it's isolated behind
-  [src/polymarket/clob.ts](src/polymarket/clob.ts) so migrating to Polymarket's
-  new unified SDK later touches only that one file.
+- Public books use the official [`@polymarket/client`](https://github.com/Polymarket/ts-sdk/tree/main/packages/client)
+  (`createPublicClient().fetchOrderBook({ assetId })`), following the official
+  [migration guide](https://docs.polymarket.com/migrate/clob-sdk-to-unified-sdk) and
+  [order-book documentation](https://docs.polymarket.com/market-data/prices-order-books).
+  Existing Gamma discovery and forecast/strategy calculations are preserved.
+  Authenticated SDK features and protocol V2 discovery are outside Phase 1.
 - No paid services required: Open-Meteo and NWS are both free and keyless.
 
 [Reference](https://x.com/polysuccubus/status/2046644181347491847)
