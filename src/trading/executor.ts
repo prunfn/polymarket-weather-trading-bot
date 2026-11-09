@@ -1,4 +1,4 @@
-import type { Config } from "../config.js";
+import { assertLiveReady, type Config } from "../config.js";
 import type { ClobTradingClient } from "../polymarket/clob.js";
 import type { Portfolio } from "./portfolio.js";
 import type { FillRecord, TradeSignal } from "../types.js";
@@ -14,8 +14,7 @@ export interface ExecutionResult {
 
 /**
  * Turns a TradeSignal into a fill. In paper mode it simulates an immediate fill
- * at the signal price; in live mode it posts a real order to the CLOB and only
- * books the position if the venue accepts it.
+ * at the signal price. Live execution is disabled in Phase 1.
  */
 export class Executor {
   constructor(
@@ -25,6 +24,7 @@ export class Executor {
   ) {}
 
   async execute(signal: TradeSignal): Promise<ExecutionResult> {
+    assertLiveReady(this.cfg);
     const mode = this.cfg.TRADING_MODE;
     const ts = new Date().toISOString();
     const baseFill: FillRecord = {
@@ -48,28 +48,7 @@ export class Executor {
       return { ok: true, mode, fill: baseFill };
     }
 
-    // live
-    try {
-      const res = await this.clob.placeOrder({
-        tokenId: signal.tokenId,
-        side: "BUY",
-        price: signal.price,
-        size: signal.size,
-        tickSize: signal.tickSize,
-        negRisk: signal.negRisk,
-      });
-      const fill: FillRecord = { ...baseFill, orderId: res.orderId };
-      this.book(fill, signal);
-      log.info(
-        `LIVE order ${res.orderId ?? "?"} (${res.status ?? "?"}): BUY ${signal.size.toFixed(2)} ` +
-          `@ ${signal.price.toFixed(3)} — ${signal.question}`,
-      );
-      return { ok: true, mode, orderId: res.orderId, fill };
-    } catch (err) {
-      const error = (err as Error).message;
-      log.error(`LIVE order failed: ${error} — ${signal.question}`);
-      return { ok: false, mode, error };
-    }
+    throw new Error("Live trading is disabled in Phase 1.");
   }
 
   private book(fill: FillRecord, signal: TradeSignal): void {

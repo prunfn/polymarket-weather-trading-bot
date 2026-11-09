@@ -16,16 +16,9 @@ const csv = z
 const num = (def: number) => z.coerce.number().default(def);
 
 const schema = z.object({
-  // wallet / polymarket
-  PRIVATE_KEY: z.string().default(""),
-  FUNDER_ADDRESS: z.string().default(""),
-  SIGNATURE_TYPE: z.coerce.number().int().min(0).max(2).default(0),
+  // Public data only. Wallet/API credentials are deliberately not loaded.
   CLOB_HOST: z.string().url().default("https://clob.polymarket.com"),
   GAMMA_HOST: z.string().url().default("https://gamma-api.polymarket.com"),
-  CHAIN_ID: z.coerce.number().int().default(137),
-  CLOB_API_KEY: z.string().default(""),
-  CLOB_API_SECRET: z.string().default(""),
-  CLOB_API_PASSPHRASE: z.string().default(""),
 
   // mode + risk
   TRADING_MODE: z.enum(["paper", "live"]).default("paper"),
@@ -63,27 +56,24 @@ export type Config = z.infer<typeof schema>;
 
 let cached: Config | null = null;
 
-export function loadConfig(): Config {
-  if (cached) return cached;
-  const parsed = schema.safeParse(process.env);
+export function parseConfig(env: NodeJS.ProcessEnv): Config {
+  const parsed = schema.safeParse(env);
   if (!parsed.success) {
-    const issues = parsed.error.issues.map((i) => `  ${i.path.join(".")}: ${i.message}`).join("\n");
+    // Validation messages may echo supplied values. Report field names only.
+    const issues = parsed.error.issues.map((i) => `  ${i.path.join(".")}: invalid value`).join("\n");
     throw new Error(`Invalid configuration:\n${issues}`);
   }
-  cached = parsed.data;
+  return parsed.data;
+}
+
+export function loadConfig(): Config {
+  if (cached) return cached;
+  cached = parseConfig(process.env);
   setLogLevel(cached.LOG_LEVEL as LogLevel);
   return cached;
 }
 
-/** Throw early if live trading is requested without the credentials to do it. */
+/** Phase 1 has no authenticated client or order submission implementation. */
 export function assertLiveReady(cfg: Config): void {
-  const missing: string[] = [];
-  if (!cfg.PRIVATE_KEY || !cfg.PRIVATE_KEY.startsWith("0x")) missing.push("PRIVATE_KEY");
-  if (!cfg.FUNDER_ADDRESS) missing.push("FUNDER_ADDRESS");
-  if (missing.length) {
-    throw new Error(
-      `TRADING_MODE=live requires ${missing.join(", ")} in .env. ` +
-        `Refusing to start live trading without them.`,
-    );
-  }
+  if (cfg.TRADING_MODE !== "paper") throw new Error("Live trading is disabled in Phase 1.");
 }
